@@ -26,17 +26,31 @@ async function run(){
     const AppointmentServices = client.db('PatientBeta').collection('appServices')
     const Booking = client.db('PatientBeta').collection('bookings')
 
-    // get all appointment services 
+    // get all appointment services  *** use aggregate to query multiple collection and merge data 
+    
     app.get('/appointmentServicess', async(req,res) =>{
+        const date = req.query.date 
         const cursor = AppointmentServices.find({})
-        const result = await cursor.toArray()
-        res.send(result)
+        const allAppServices = await cursor.toArray()
+        const bookingQuery = {appointmentDate: date}
+        const bookedServices = await Booking.find(bookingQuery).toArray()
+        allAppServices.forEach(service => {
+            const matchedBookServices = bookedServices.filter(book => book.treatment === service.name)
+            const bookingSlots = matchedBookServices.map(booksl => booksl.selectedTime)
+            const remainingSlots = service.slots.filter(slot => !bookingSlots.includes(slot))
+            service.slots = remainingSlots
+        })
+        res.send(allAppServices)
     })
+
+
+    // create api with mongodb aggregate 
+    
+
 
     // post a booking user 
     app.post('/bookings', async(req,res) =>{
         const bookingPatient = req.body
-        console.log(bookingPatient)
         const result = await Booking.insertOne(bookingPatient)
         res.send(result) 
 
