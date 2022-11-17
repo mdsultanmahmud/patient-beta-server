@@ -151,6 +151,19 @@ async function run() {
         res.send(result)
     })
 
+    // check admin or not 
+    app.get('/users/admin/:email', async(req,res) =>{
+        const email = req.params.email 
+        console.log(email)
+        const query = {
+            email: email
+        }
+
+        const user = await Users.findOne(query)
+        res.send({
+            isAdmin: user?.role === 'admin'
+        })
+    })
 
     // create access token and send it client side 
 
