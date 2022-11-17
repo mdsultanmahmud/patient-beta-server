@@ -43,14 +43,32 @@ async function run(){
         res.send(allAppServices)
     })
 
-
-    // create api with mongodb aggregate 
-    
-
+    // get all bookings for a specific email 
+    app.get('/bookings', async (req,res) =>{
+        const searchEmail = req.query.email
+        const query = {
+            email: searchEmail
+        }
+        const result = await Booking.find(query).toArray()
+        res.send(result)
+    })
 
     // post a booking user 
     app.post('/bookings', async(req,res) =>{
         const bookingPatient = req.body
+        const query = {
+            appointmentDate: bookingPatient.appointmentDate,
+            treatment: bookingPatient.treatment,
+            email: bookingPatient.email
+        }
+        const bookedAppOnDay = await Booking.find(query).toArray()
+        
+        if(bookedAppOnDay.length){
+            return res.send({
+                success: false,
+                message: `You have already booked on ${bookingPatient.appointmentDate}`
+            })
+        }
         const result = await Booking.insertOne(bookingPatient)
         res.send(result) 
 
