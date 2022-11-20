@@ -52,7 +52,25 @@ async function run() {
     const AppointmentServices = client.db('PatientBeta').collection('appServices')
     const Booking = client.db('PatientBeta').collection('bookings')
     const Users = client.db('PatientBeta').collection('users')
+    const Doctors = client.db('PatientBeta').collection('doctors')
     // get all appointment services  *** use aggregate to query multiple collection and merge data 
+
+    // Note: verify admin after verification jwt token 
+    const verifyAdmin = async(req, res ,next) =>{
+        const userEmail = req.decoded.email
+        const filter = {
+            email: userEmail
+        }
+        const user = await Users.findOne(filter)
+        if(user.role !== 'admin'){
+            return res.send({
+                success: false,
+                message: 'You are not admin, you have no permission  for making admin.'
+            })
+        }
+
+        next()
+    }
 
     app.get('/appointmentServicess', async (req, res) => {
         const date = req.query.date
@@ -67,6 +85,12 @@ async function run() {
             service.slots = remainingSlots
         })
         res.send(allAppServices)
+    })
+
+    // get appontment services with specific field 
+    app.get('/appointmentSpeciality', async (req,res) =>{
+        const result = await AppointmentServices.find({}).project({name: 1}).toArray()
+        res.send(result)
     })
 
     // get all bookings for a specific email 
@@ -108,6 +132,15 @@ async function run() {
 
     })
 
+    // specific bookings data 
+    app.get('/bookings/:id', async(req,res) =>{
+        const id = req.params.id 
+        const query = {
+            _id: ObjectId(id)
+        }
+        const result = await Booking.findOne(query)
+        res.send(result)
+    })
 
     // create user 
     app.post('/users', async (req, res) => {
@@ -122,19 +155,7 @@ async function run() {
         res.send(result)
     })
 
-    app.put('/users/:id', verifyToken, async(req,res) =>{
-        const decodedEmail = req.decoded.email 
-        const query = {
-            email: decodedEmail
-        }
-        const user = await Users.findOne(query)
-        if(user.role !== 'admin'){
-            return res.send({
-                success: false,
-                message: 'You are not admin, you have no permission  for making admin.'
-            })
-        }
-
+    app.put('/users/:id', verifyToken,verifyAdmin, async(req,res) =>{
         const id = req.params.id 
         const filter = {
             _id: ObjectId(id)
@@ -154,7 +175,6 @@ async function run() {
     // check admin or not 
     app.get('/users/admin/:email', async(req,res) =>{
         const email = req.params.email 
-        console.log(email)
         const query = {
             email: email
         }
@@ -184,6 +204,29 @@ async function run() {
             success: false,
             accessToken: 'null'
         })
+    })
+
+
+    // deal with adding doctor 
+    app.post('/doctors', verifyToken,verifyAdmin, async(req, res) =>{
+        const doctor = req.body 
+        const result = await Doctors.insertOne(doctor)
+        res.send(result)
+    })
+    // get all doctors 
+    app.get('/doctors', verifyToken,verifyAdmin, async(req, res) =>{
+        const query = {}
+        const result = await Doctors.find(query).toArray()
+        res.send(result)
+    })
+    // delete doctors 
+    app.delete('/doctors/:id', verifyToken, verifyAdmin, async(req, res) =>{
+        const id = req.params.id
+        const query = {
+            _id: ObjectId(id)
+        }
+        const result = await Doctors.deleteOne(query)
+        res.send(result)
     })
 
 }
