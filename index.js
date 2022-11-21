@@ -5,8 +5,8 @@ const cors = require('cors')
 require('dotenv').config()
 const jwt = require('jsonwebtoken')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 // middlewear
-
 app.use(cors())
 app.use(express.json())
 
@@ -23,18 +23,18 @@ app.listen(port, () => {
 const verifyToken = async (req, res, next) => {
     // console.log(req.headers.authorizationtoken)
     const accessTokenHeader = req.headers.authorizationtoken
-    if(!accessTokenHeader){
+    if (!accessTokenHeader) {
         return res.status(401).send({
-            success: false, 
+            success: false,
             message: 'Unauthorized access'
         })
     }
 
     const token = accessTokenHeader.split(' ')[1]
-    jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) =>{
-        if(err){
+    jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+        if (err) {
             return res.send({
-                success: false, 
+                success: false,
                 message: 'Unauthorized access'
             })
         }
@@ -53,16 +53,17 @@ async function run() {
     const Booking = client.db('PatientBeta').collection('bookings')
     const Users = client.db('PatientBeta').collection('users')
     const Doctors = client.db('PatientBeta').collection('doctors')
+    const Payments = client.db('PatientBeta').collection('payments')
     // get all appointment services  *** use aggregate to query multiple collection and merge data 
 
     // Note: verify admin after verification jwt token 
-    const verifyAdmin = async(req, res ,next) =>{
+    const verifyAdmin = async (req, res, next) => {
         const userEmail = req.decoded.email
         const filter = {
             email: userEmail
         }
         const user = await Users.findOne(filter)
-        if(user.role !== 'admin'){
+        if (user.role !== 'admin') {
             return res.send({
                 success: false,
                 message: 'You are not admin, you have no permission  for making admin.'
@@ -88,16 +89,16 @@ async function run() {
     })
 
     // get appontment services with specific field 
-    app.get('/appointmentSpeciality', async (req,res) =>{
-        const result = await AppointmentServices.find({}).project({name: 1}).toArray()
+    app.get('/appointmentSpeciality', async (req, res) => {
+        const result = await AppointmentServices.find({}).project({ name: 1 }).toArray()
         res.send(result)
     })
 
     // get all bookings for a specific email 
-    app.get('/bookings',verifyToken, async (req, res) => {
+    app.get('/bookings', verifyToken, async (req, res) => {
         const searchEmail = req.query.email
-        const email = req.decoded.email 
-        if(email !== searchEmail){
+        const email = req.decoded.email
+        if (email !== searchEmail) {
             return res.send({
                 success: false,
                 message: 'Unauthorized access'
@@ -133,8 +134,8 @@ async function run() {
     })
 
     // specific bookings data 
-    app.get('/bookings/:id', async(req,res) =>{
-        const id = req.params.id 
+    app.get('/bookings/:id', async (req, res) => {
+        const id = req.params.id
         const query = {
             _id: ObjectId(id)
         }
@@ -150,20 +151,20 @@ async function run() {
     })
 
     // get all users 
-    app.get('/users', async(req,res) =>{
+    app.get('/users', async (req, res) => {
         const result = await Users.find({}).toArray()
         res.send(result)
     })
 
-    app.put('/users/:id', verifyToken,verifyAdmin, async(req,res) =>{
-        const id = req.params.id 
+    app.put('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+        const id = req.params.id
         const filter = {
             _id: ObjectId(id)
         }
 
-        const option = {upsert: true}
+        const option = { upsert: true }
         const updatedUser = {
-            $set:{
+            $set: {
                 role: 'admin'
             }
         }
@@ -173,8 +174,8 @@ async function run() {
     })
 
     // check admin or not 
-    app.get('/users/admin/:email', async(req,res) =>{
-        const email = req.params.email 
+    app.get('/users/admin/:email', async (req, res) => {
+        const email = req.params.email
         const query = {
             email: email
         }
@@ -208,24 +209,63 @@ async function run() {
 
 
     // deal with adding doctor 
-    app.post('/doctors', verifyToken,verifyAdmin, async(req, res) =>{
-        const doctor = req.body 
+    app.post('/doctors', verifyToken, verifyAdmin, async (req, res) => {
+        const doctor = req.body
         const result = await Doctors.insertOne(doctor)
         res.send(result)
     })
     // get all doctors 
-    app.get('/doctors', verifyToken,verifyAdmin, async(req, res) =>{
+    app.get('/doctors', verifyToken, verifyAdmin, async (req, res) => {
         const query = {}
         const result = await Doctors.find(query).toArray()
         res.send(result)
     })
     // delete doctors 
-    app.delete('/doctors/:id', verifyToken, verifyAdmin, async(req, res) =>{
+    app.delete('/doctors/:id', verifyToken, verifyAdmin, async (req, res) => {
         const id = req.params.id
         const query = {
             _id: ObjectId(id)
         }
         const result = await Doctors.deleteOne(query)
+        res.send(result)
+    })
+
+
+    // handle stripe payment method 
+    app.post('/create-payment-intent', async (req, res) => {
+        const bookingAppointment = req.body
+        const price = bookingAppointment.price
+        const amount = price * 100;
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount,
+            currency: 'usd',
+            "payment_method_types": [
+                'card'
+            ]
+        })
+
+        res.send({
+            clientSecret: paymentIntent.client_secret,
+        });
+    })
+
+    // save some information about payment after payment 
+    app.post('/payment', async(req,res) =>{
+        const paymentInfo = req.body 
+        const result = await Payments.insertOne(paymentInfo)
+        const bookingId = paymentInfo.paymentId 
+        const query = {
+            _id: ObjectId(bookingId)
+        }
+        const option = {upsert: true}
+        const updateBooked = {
+            $set:{
+                paid: true,
+                transactionId: paymentInfo.transectionId
+            }
+        }
+
+        const bookResult = await Booking.updateOne(query, updateBooked, option)
         res.send(result)
     })
 
