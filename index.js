@@ -6,6 +6,8 @@ require('dotenv').config()
 const jwt = require('jsonwebtoken')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+const nodemailer = require("nodemailer");
+const mg = require('nodemailer-mailgun-transport')
 // middlewear
 app.use(cors())
 app.use(express.json())
@@ -18,6 +20,50 @@ app.listen(port, () => {
     console.log('server is running from port: ', port)
 })
 
+// send email to user after booking to confirm 
+const confirmBookingEmail = (booking) =>{
+    console.log(booking)
+    const {email, treatment, appointmentDate, selectedTime} = booking
+    // let transporter = nodemailer.createTransport({
+    //     host: 'smtp.sendgrid.net',
+    //     port: 587,
+    //     auth: {
+    //         user: "apikey",
+    //         pass: process.env.SENDGRID_API_KEY
+    //     }
+    //  })
+
+    const auth = {
+        auth: {
+          api_key: process.env.SENDGRID_API_KEY,
+          domain: process.env.SENDMAIL_DOMAIN
+        }
+      }
+
+      const nodemailerMailgun = nodemailer.createTransport(mg(auth));
+
+      nodemailerMailgun.sendMail({
+        from: "mdsultanmahmud.bd00@gmail.com", // verified sender email
+        to: email || 'mdsultanmahmud.bd00@gmail.com', // recipient email
+        subject: `Your appointment accepted.`, // Subject line
+        text: "Hello world!", // plain text body
+        html: `
+            <div>
+                <h1>Your appointment accepted for ${treatment}.</h1>
+                <p>Appointment date is ${appointmentDate} and your time ${selectedTime}</p>
+                <h4>Thank you</h4>
+                <h4>patient beta</h4>
+            </div>
+        `, // html body
+      }, function(error, info){
+        if (error) {
+          console.log(error);
+        } else {
+          console.log('Email sent: ' + info.response);
+        }
+      });
+     
+}
 
 // verify access token 
 const verifyToken = async (req, res, next) => {
@@ -129,6 +175,7 @@ async function run() {
             })
         }
         const result = await Booking.insertOne(bookingPatient)
+        confirmBookingEmail(bookingPatient)
         res.send(result)
 
     })
